@@ -1,0 +1,25 @@
+name: Linux Build
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Compile and Run First Executable on 32-bit Ubuntu
+        run: |
+          docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace ubuntu:16.04 /bin/bash -c "
+          apt-get update &&
+          apt-get install -y gcc make && 
+          cd my_add &&
+          make gcc -m32 &&
+          ./add<input1.txt"
