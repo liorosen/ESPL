@@ -16,14 +16,18 @@ void execute(cmdLine *pCmdLine) {
         _exit(EXIT_FAILURE);
     }
 }
-
+ 
 void change_directory(cmdLine *pCmdLine) {
     if (pCmdLine->argCount < 2) {
         fprintf(stderr, "cd: missing argument\n");
         return;
     }
+
     if (chdir(pCmdLine->arguments[1]) == -1) {
         perror("cd failed");
+        fprintf(stderr, "cd: %s: No such file or directory\n", pCmdLine->arguments[1]);
+    } else {
+        fprintf(stderr, "Changed directory to: %s\n", pCmdLine->arguments[1]);
     }
 }
 
