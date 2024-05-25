@@ -8,7 +8,7 @@
 #include <sched.h>
 #include <linux/limits.h>
 #include <sys/wait.h>
-#include <asm-generic/signal.h>
+#include <signal.h>
 #define INPUT_SIZE 2048
 
 void execute(cmdLine *pCmdLine) {

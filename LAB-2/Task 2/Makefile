@@ -1,28 +1,10 @@
-# Default target
-all: myshellTask2 looper
+all: myshellTask2
 
-# Rule for building the executable
-myshellTask2: LineParser.o myshellTask2.o 
-	 gcc LineParser.o myshellTask2.o  -o myshellTask2
+myshellTask2: myshellTask2.o
+	sudo apt update-Wall -o myshellTask2 myshellTask2.o
 
-looper: looper.o
-	gcc looper.o -o looper
-
-# Rule for building LineParser.o
-LineParser.o: LineParser.c LineParser.h
-	 gcc -c LineParser.c -o LineParser.o
-
-# Rule for building myshellTask2.o
 myshellTask2.o: myshellTask2.c LineParser.h
-	 gcc -c myshellTask2.c -o myshellTask2.o
+	gcc -g -m32 -Wall -c myshellTask2.c
 
-# Rule for building looper.o
-looper.o: looper.c
-	gcc -c looper.c -o looper.o
-
-# Rule for cleaning up generated files
 clean:
-	rm -f LineParser.o myshellTask2.o looper.o myshellTask2 looper
-
-# Phony targets
-.PHONY: all clean
+	rm -f myshellTask2 *.o
