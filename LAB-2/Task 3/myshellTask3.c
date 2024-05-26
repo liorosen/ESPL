@@ -13,14 +13,15 @@
 
 void execute(cmdLine *pCmdLine) {
     //I used https://stackoverflow.com/questions/48970420/creating-a-shell-in-c-how-would-i-implement-input-and-output-redirection as reference
+    
     // Redirect input if specified
     if (pCmdLine->inputRedirect) {
-        int inputFile = fopen(pCmdLine->inputRedirect, "r");
-        if (inputFile < 0) {
+        FILE *inputFile = fopen(pCmdLine->inputRedirect, "r");
+        if (inputFile == NULL) {
             perror("open inputRedirect failed");
             _exit(EXIT_FAILURE);
         }
-        if (dup2(inputFile, STDIN_FILENO) < 0) {
+        if (dup2(fileno(inputFile), STDIN_FILENO) < 0) {
             perror("dup2 inputRedirect failed");
             _exit(EXIT_FAILURE);
         }
@@ -29,12 +30,13 @@ void execute(cmdLine *pCmdLine) {
 
     // Redirect output if specified
     if (pCmdLine->outputRedirect) {
-        int outputFile = fopen(pCmdLine->outputRedirect, "w");
-        if (outputFile < 0) {
+        FILE *outputFile = fopen(pCmdLine->outputRedirect, "w");
+        if (outputFile == NULL) {
             perror("open outputRedirect failed");
             _exit(EXIT_FAILURE);
         }
-        if (dup2(outputFile, STDOUT_FILENO) < 0) {
+        //The output of the command will be written to outputFile
+        if (dup2(fileno(outputFile), STDOUT_FILENO) < 0) {
             perror("dup2 outputRedirect failed");
             _exit(EXIT_FAILURE);
         }
