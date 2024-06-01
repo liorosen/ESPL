@@ -1,8 +1,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <chrono>
-#include <iostream> 
+#include <time.h>
+
 
 typedef struct virus {
     unsigned short SigSize;
@@ -10,10 +10,12 @@ typedef struct virus {
     unsigned char* sig;
 } virus;
 
-struct link {
+
+typedef struct link {
 link *nextVirus;
 virus *vir;
-};
+}link;
+
 char sigFileName[256] = "signatures-L";
 
 void SetSigFileName() {
@@ -50,20 +52,26 @@ virus* readVirus(FILE* file) {
         free(v);
         return NULL;
     }
-
+    //printf("Read virus: %s\n", v->virusName);  // Debug print
     return v;
 }
 
 
 void printVirus(virus* v) {
     if (v == NULL) return;
+    printf("\n");
     printf("Virus name: %s\n", v->virusName);
     printf("Virus signature length: %d\n", v->SigSize);
-    printf("Virus signature: ");
+    printf("Virus signature: \n");
     for (int i = 0; i < v->SigSize; ++i) {
         printf("%02X ", v->sig[i]);
+        if ((i + 1) % 20 == 0) { // Insert a newline every 20 bytes
+            printf("\n");
+        }
     }
-    printf("\n");
+    if (v->SigSize % 20 != 0) { // If the last line didn't end in a newline, add one
+        printf("\n");
+    }
 }
 
 void freeVirus(virus* v) {
@@ -110,16 +118,19 @@ void fix_file() {
     printf("Not implemented\n");
 }
 
-void optionPrint(int choice,char buffer){
+void optionPrint(int* choice,char *buffer){
+    printf("\n");
     printf("0) Set signatures file name\n");
     printf("1) Load signatures\n");
     printf("2) Print signatures\n");
     printf("3) Detect viruses\n");
-    printf("MAGIC_NUM_SIZE) Fix file\n");
+    printf("4) Fix file\n");
     printf("5) Quit\n");
     printf("Enter your choice: ");
-    fgets(buffer, sizeof(buffer), stdin);
-    sscanf(buffer, "%d", &choice);
+    fgets(buffer, 256, stdin);
+    sscanf(buffer, "%d",choice);
+    printf("\n");
+    
 }
 
 int main(int argc, char* argv[]) {
@@ -127,18 +138,22 @@ int main(int argc, char* argv[]) {
     link *virus_list = NULL;
     int choice;
     char buffer[256];
+    FILE* file;
+    char magicNumber[MAGIC_NUM_SIZE];
+
     while(1){
-        optionPrint(choice,buffer);
+        optionPrint(&choice,buffer);
         switch (choice){
-            case 0:
+            case 0:{
                 SetSigFileName();
                 break;
-            case 1:                
+            }
+            case 1:{                
                 FILE* file = fopen(sigFileName, "rb");
                 if (!file) {
-                perror("Failed to open signature file");
-                break;
-            
+                    perror("Failed to open signature file");
+                    break;
+                }
                 // Read and check the magic number
                 char magicNumber[MAGIC_NUM_SIZE];
                 if (fread(magicNumber, 1, MAGIC_NUM_SIZE, file) != MAGIC_NUM_SIZE) {
@@ -157,31 +172,40 @@ int main(int argc, char* argv[]) {
 
                 // Read and append viruses
                 virus *v;
-                auto start = std::chrono::high_resolution_clock::now();
+                //clock_t start =clock();                //Taken from https://stackoverflow.com/questions/31497531/what-is-the-type-of-stdchronohigh-resolution-clocknow-in-c11
                 while ((v = readVirus(file)) != NULL) {
                     virus_list = list_append(virus_list, v);
                 }
-                auto end = std::chrono::high_resolution_clock::now();
-                std::chrono::duration<double> duration = end - start;
-                std::cout << "Time taken to load signatures: " << duration.count() << " seconds" << std::endl;
+                // clock_t end = clock();
+                // double duration = (double)(end - start) / CLOCKS_PER_SEC;
+                // printf("Time taken to load signatures: %.6f seconds\n", duration);
 
                 fclose(file);
                 break;
             }
-            case 2:
-                list_print(virus_list, stdout);
+            case 2:{
+                if (virus_list != NULL) {
+                    list_print(virus_list, stdout);
+                } else {
+                    printf("No signatures loaded.\n");  // Debug print
+                }
                 break;
-            case 3:
+            }
+            case 3:{
                 detect_viruses();
                 break;
-            case 4:
+            }
+            case 4:{
                 fix_file();
                 break;
-            case 5:
+            }
+            case 5:{
                 list_free(virus_list);
                 return 0;
-            default:
+            }
+            default:{
                 printf("Invalid choice, please try again.\n");
+            }
 
         }
     }
