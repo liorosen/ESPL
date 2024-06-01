@@ -93,10 +93,137 @@ void change_directory(cmdLine *pCmdLine) {
     }
 }
 
-int main(int argc, char *argv[]) {
+void display_prompt() {
     char cwd[PATH_MAX];
+    if (getcwd(cwd, sizeof(cwd)) != NULL) {
+        printf("%s> ", cwd);
+    } else {
+        perror("getcwd() error");
+    }
+}
+
+int read_input(char *input, size_t size) {
+    if (fgets(input, size, stdin) == NULL) {
+        perror("fgets() error");
+        return -1;
+    }
+    input[strcspn(input, "\n")] = '\0'; // Remove newline character
+    return 0;
+}
+
+cmdLine* parse_input(char *input) {
+    cmdLine *parsedLine = parseCmdLines(input);
+    if (parsedLine == NULL) {
+        fprintf(stderr, "parseCmdLines() error: %s\n", strerror(errno));
+    }
+    return parsedLine;
+}
+
+int handle_quit_command(cmdLine *parsedLine) {
+    if (strcmp(parsedLine->arguments[0], "quit") == 0) {
+        freeCmdLines(parsedLine);
+        return 1;
+    }
+    return 0;
+}
+
+int handle_cd_command(cmdLine *parsedLine) {
+    if (strcmp(parsedLine->arguments[0], "cd") == 0) {
+        change_directory(parsedLine);
+        freeCmdLines(parsedLine);
+        return 1;
+    }
+    return 0;
+}
+
+int handle_alarm_command(cmdLine *parsedLine) {
+    if (strcmp(parsedLine->arguments[0], "alarm") == 0) {
+        alarm_process(parsedLine);
+        freeCmdLines(parsedLine);
+        return 1;
+    }
+    return 0;
+}
+
+int handle_blast_command(cmdLine *parsedLine) {
+    if (strcmp(parsedLine->arguments[0], "blast") == 0) {
+        blast_process(parsedLine);
+        freeCmdLines(parsedLine);
+        return 1;
+    }
+    return 0;
+}
+
+void fork_and_execute(cmdLine *parsedLine, int debug) {
+    pid_t pid = fork();
+    if (pid == -1) {
+        perror("fork failed");
+    } else if (pid == 0) {
+        // Child process
+        if (debug) {
+            fprintf(stderr, "PID: %d\n", getpid());
+            fprintf(stderr, "Executing command: %s\n", parsedLine->arguments[0]);
+        }
+        execute(parsedLine);
+        exit(EXIT_SUCCESS); // Ensure the child process exits after executing
+    } else {
+        // Parent process
+        if (parsedLine->blocking) {
+            waitpid(pid, NULL, 0); // Wait for the child process to complete if it's blocking
+        } else {
+            printf("Running in background with PID %d\n", pid); // Inform the user that the process is running in the background
+        }
+    }
+}
+
+void process_commands(int debug) {
     char input[INPUT_SIZE];
     cmdLine *parsedLine;
+
+    while (1) {
+        // Display prompt
+        display_prompt();
+
+        // Read input
+        if (read_input(input, INPUT_SIZE) == -1) {
+            continue;
+        }
+
+        // Parse input
+        parsedLine = parse_input(input);
+        if (parsedLine == NULL) {
+            continue;
+        }
+
+        // Check for "quit" command
+        if (handle_quit_command(parsedLine)) {
+            break;
+        }
+
+        // Check for "cd" command
+        if (handle_cd_command(parsedLine)) {
+            continue;
+        }
+
+        // Check for "alarm" command
+        if (handle_alarm_command(parsedLine)) {
+            continue;
+        }
+
+        // Check for "blast" command
+        if (handle_blast_command(parsedLine)) {
+            continue;
+        }
+
+        // Fork a new process to execute the command
+        fork_and_execute(parsedLine, debug);
+
+        // Free the parsed command line
+        freeCmdLines(parsedLine);
+    }
+}
+
+int main(int argc, char *argv[]) {
     int debug = 0;
 
     // Check for the "-d" flag
@@ -104,86 +231,8 @@ int main(int argc, char *argv[]) {
         debug = 1;
     }
 
-    while (1) {
-        // Display prompt
-        if (getcwd(cwd, sizeof(cwd)) != NULL) {
-            printf("%s> ", cwd);
-        } else {
-            perror("getcwd() error");
-            continue;
-        }
-
-        // Read input
-        if (fgets(input, INPUT_SIZE, stdin) == NULL) {
-            perror("fgets() error");
-            continue;
-        }
-
-        // Remove newline character from input
-        input[strcspn(input, "\n")] = '\0';
-
-        // Parse input
-        parsedLine = parseCmdLines(input);
-        if (parsedLine == NULL) {
-            perror("parseCmdLines() error");
-            continue;
-        }
-
-        // Check for "quit" command
-        if (strcmp(parsedLine->arguments[0], "quit") == 0) {
-            freeCmdLines(parsedLine);
-            break;
-        }
-
-        // Check for "cd" command
-        if (strcmp(parsedLine->arguments[0], "cd") == 0) {
-            change_directory(parsedLine);
-            freeCmdLines(parsedLine);
-            continue;
-        }
-
-        // Check for "alarm" command
-        if (strcmp(parsedLine->arguments[0], "alarm") == 0) {
-            alarm_process(parsedLine);
-            freeCmdLines(parsedLine);
-            continue;
-        }
-
-        // Check for "blast" command
-        if (strcmp(parsedLine->arguments[0], "blast") == 0) {
-            blast_process(parsedLine);
-            freeCmdLines(parsedLine);
-            continue;
-        }
-
-        // Fork a new process to execute the command
-        pid_t pid = fork();
-        if (pid == -1) {
-            perror("fork failed");
-            freeCmdLines(parsedLine);
-            continue;
-        } 
-        else if (pid == 0) {
-            // Child process
-            if (debug) {
-                fprintf(stderr, "PID: %d\n", getpid());
-                fprintf(stderr, "Executing command: %s\n", parsedLine->arguments[0]);
-            }
-            execute(parsedLine);
-        } else {
-            // Parent process
-            if (parsedLine->blocking) {
-                waitpid(pid, NULL, 0); // Wait for the child process to complete if it's blocking
-            } else {
-                printf("Running in background with PID %d\n", pid); // Inform the user that the process is running in the background
-            }
-           
-           
-        }
-
-        // Free the parsed command line
-        freeCmdLines(parsedLine);
-    }
+    process_commands(debug);
 
     return 0;
 }
+
