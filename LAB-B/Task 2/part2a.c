@@ -247,13 +247,7 @@ void loadSignatures(int MAGIC_NUM_SIZE){
     printf("Loaded succeeded\n");
 }
 
-int main(int argc, char* argv[]) {
-    int MAGIC_NUM_SIZE = 4;
-    int choice;
-    char buffer[256];
-    FILE* file;
-    char magicNumber[MAGIC_NUM_SIZE];
-
+int mainCases(int choice , char *buffer ,int MAGIC_NUM_SIZE ){
     while(1){
         optionPrint(&choice,buffer);
         switch (choice){
@@ -293,4 +287,14 @@ int main(int argc, char* argv[]) {
         }
     }
     return 0;
+}
+
+int main(int argc, char* argv[]) {
+    int MAGIC_NUM_SIZE = 4;
+    int choice;
+    char buffer[256];
+    FILE* file;
+    char magicNumber[MAGIC_NUM_SIZE];
+
+    return mainCases(choice , buffer , MAGIC_NUM_SIZE );
 }
