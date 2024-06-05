@@ -23,7 +23,8 @@ void alarm_process(cmdLine *pCmdLine) {
         fprintf(stderr, "alarm: missing process id\n");
         return;
     }
-
+    //argument in atoi function is a null-terminated string representing the number to be converted.
+    //atoi(*str) Returns the integer value of the string.
     pid_t pid = atoi(pCmdLine->arguments[1]);
     if (kill(pid, SIGCONT) == -1) {
         perror("alarm failed");

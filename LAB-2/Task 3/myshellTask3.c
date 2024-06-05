@@ -4,51 +4,132 @@
 #include <limits.h>
 #include <string.h>
 #include <errno.h>
-#include "LineParser.h"
+#include <fcntl.h>
 #include <sched.h>
 #include <linux/limits.h>
 #include <sys/wait.h>
 #include <signal.h>
+#include "LineParser.h"
 #define INPUT_SIZE 2048
+
+
+int openFileWithMode(const char *fileName, const char *mode) {
+    int flags;
+    if (strcmp(mode, "r") == 0) {
+        flags = O_RDONLY;
+    } else if (strcmp(mode, "w") == 0) {
+        flags = O_WRONLY | O_CREAT | O_TRUNC;
+    } else {
+        fprintf(stderr, "Unsupported file mode: %s\n", mode);
+        return -1;
+    }
+    return open(fileName, flags, 0644);
+}
+
+void handleinput(cmdLine *pCmdLine){
+    
+    // Close the current standard input file descriptor
+        if (close(STDIN_FILENO) < 0) {
+            perror("close STDIN failed");
+            _exit(EXIT_FAILURE);
+        }
+
+        // Open the input file
+        int inputFile = openFileWithMode(pCmdLine->inputRedirect, "r");
+        if (inputFile < 0) {
+            perror("open inputRedirect failed");
+            _exit(EXIT_FAILURE);
+        }
+
+        
+
+        // // Duplicate the input file descriptor to standard input
+        // if (openFileWithMode(pCmdLine->inputRedirect, "r") != STDIN_FILENO) {
+        //     perror("open inputRedirect to STDIN failed");
+        //     _exit(EXIT_FAILURE);
+        // }
+
+        // Close the original file descriptor as it's no longer needed
+        //close(inputFile);
+}
+
+void handleOutput(cmdLine *pCmdLine){
+    // Close the current standard output file descriptor
+    if (close(STDOUT_FILENO) < 0) {
+        perror("close STDOUT failed");
+        _exit(EXIT_FAILURE);
+    }
+  
+    // Open the output file
+    int outputFile = openFileWithMode(pCmdLine->outputRedirect, "w");
+    if (outputFile < 0) {
+        perror("open outputRedirect failed");
+        _exit(EXIT_FAILURE);
+    }
+
+        
+
+        // // Duplicate the output file descriptor to standard output
+        // if (openFileWithMode(pCmdLine->outputRedirect, "w") != STDOUT_FILENO) {
+        //     perror("open outputRedirect to STDOUT failed");
+        //     _exit(EXIT_FAILURE);
+        // }
+
+        // Close the original file descriptor as it's no longer needed
+        //close(outputFile);
+    
+}
+
+void handleinputdup(cmdLine *pCmdLine){
+    
+    FILE *inputFile = fopen(pCmdLine->inputRedirect, "r");
+    if (inputFile == NULL) {
+        perror("open inputRedirect failed");
+        _exit(EXIT_FAILURE);
+    }
+    if (dup2(fileno(inputFile), STDIN_FILENO) < 0) {
+        perror("dup2 inputRedirect failed");
+        _exit(EXIT_FAILURE);
+    }
+    fclose(inputFile);
+}
+
+void handleOutputdup(cmdLine *pCmdLine){
+    FILE *outputFile = fopen(pCmdLine->outputRedirect, "w");
+    if (outputFile == NULL) {
+        perror("open outputRedirect failed");
+        _exit(EXIT_FAILURE);
+    }
+    //The output of the command will be written to outputFile
+    if (dup2(fileno(outputFile), STDOUT_FILENO) < 0) {
+        perror("dup2 outputRedirect failed");
+        _exit(EXIT_FAILURE);
+    }
+    fclose(outputFile);
+}
 
 void execute(cmdLine *pCmdLine) {
     //I used https://stackoverflow.com/questions/48970420/creating-a-shell-in-c-how-would-i-implement-input-and-output-redirection as reference
     
     // Redirect input if specified
     if (pCmdLine->inputRedirect) {
-        FILE *inputFile = fopen(pCmdLine->inputRedirect, "r");
-        if (inputFile == NULL) {
-            perror("open inputRedirect failed");
-            _exit(EXIT_FAILURE);
-        }
-        if (dup2(fileno(inputFile), STDIN_FILENO) < 0) {
-            perror("dup2 inputRedirect failed");
-            _exit(EXIT_FAILURE);
-        }
-        fclose(inputFile);
+        handleinputdup(pCmdLine);
+        //handleinput(pCmdLine);
     }
-
+    
     // Redirect output if specified
     if (pCmdLine->outputRedirect) {
-        FILE *outputFile = fopen(pCmdLine->outputRedirect, "w");
-        if (outputFile == NULL) {
-            perror("open outputRedirect failed");
-            _exit(EXIT_FAILURE);
-        }
-        //The output of the command will be written to outputFile
-        if (dup2(fileno(outputFile), STDOUT_FILENO) < 0) {
-            perror("dup2 outputRedirect failed");
-            _exit(EXIT_FAILURE);
-        }
-        fclose(outputFile);
+       handleOutputdup(pCmdLine);
+       //handleOutput(pCmdLine);
     }
-
+      
     // Execute the command
     if (execvp(pCmdLine->arguments[0], pCmdLine->arguments) == -1) {
         perror("execvp failed");
         _exit(EXIT_FAILURE);
     }
 }
+
  
 void alarm_process(cmdLine *pCmdLine) {
     if (pCmdLine->argCount < 2) {
@@ -111,6 +192,7 @@ int read_input(char *input, size_t size) {
     return 0;
 }
 
+//Parse a command line input string to execute commands in a shell
 cmdLine* parse_input(char *input) {
     cmdLine *parsedLine = parseCmdLines(input);
     if (parsedLine == NULL) {

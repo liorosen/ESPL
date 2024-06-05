@@ -11,19 +11,25 @@
 #define INPUT_SIZE 2048
 
 void execute(cmdLine *pCmdLine) {
-    if (execvp(pCmdLine->arguments[0], pCmdLine->arguments) == -1) {
+    /*The execvp function requires an array of null-terminated strings to know where each argument ends.
+      The arguments array (char *argv[]) passed to execvp must be an array of 
+      pointers to null-terminated strings, and the last element of the array must be NULL to
+      indicate the end of the argument list.*/
+    //Check command has at least 2 arguments
+   if (execvp(pCmdLine->arguments[0], pCmdLine->arguments) == -1) {
         perror("execvp failed");
         _exit(EXIT_FAILURE);
     }
 }
  
 void change_directory(cmdLine *pCmdLine) {
+    //Check to ensures there are enough arguments provided for a command to execute properly.
     if (pCmdLine->argCount < 2) {
         fprintf(stderr, "cd: missing argument\n");
         return;
     }
-
-    if (chdir(pCmdLine->arguments[1]) == -1) {
+    //Check tries to change the current working directory 
+    if (chdir(pCmdLine->arguments[1]) == -1) {    //Chdir -changes the current working directory of the calling process to the directory specified by the path
         perror("cd failed");
         fprintf(stderr, "cd: %s: No such file or directory\n", pCmdLine->arguments[1]);
     } else {
