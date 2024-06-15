@@ -11,60 +11,7 @@
 #include <signal.h>
 #include "LineParser.h"
 #define INPUT_SIZE 2048
-#define TERMINATED  -1
-#define RUNNING 1
-#define SUSPENDED 0
 
-typedef struct process{
-    cmdLine* cmd;                     /* the parsed command line*/
-    pid_t pid; 		                  /* the process id that is running the command*/
-    int status;                       /* status of the process: RUNNING/SUSPENDED/TERMINATED */
-    struct process *next;	          /* next process in chain */
-} process;
-
-void addProcess(process** process_list, cmdLine* cmd, pid_t pid);
-void printProcessList(process** process_list);
-
-void addProcess(process** process_list, cmdLine* cmd, pid_t pid){
-    process* new_process = (process*)malloc(sizeof(process));
-    if(!new_process){
-        perror("Failed to allocate memory for new process");
-        return;
-    }
-    new_process->cmd = cmd;
-    new_process->pid = pid;
-    new_process->status = RUNNING;
-    new_process->next = *process_list;  // Setting the head of the list as the next node
-    *process_list = new_process;        // The head of the list is the new procees we added
-}
-
-void printProcessList(process** process_list){
-    // Create pointer to iterate on the list
-    process* current_link = *process_list;
-    int index = 0;
-    char* status;
-    printf("Index\t\t  PID\t\t Status\t\t\tCommand\n");
-
-    while (current_link != NULL) {
-        // Determine the status string
-        if (current_link->status == RUNNING) {
-            status = "Running";
-        } else if (current_link->status == SUSPENDED) {
-            status = "Suspended";
-        } else {
-            status = "Terminated";
-        }
-
-        // Print the process information
-        printf(" %d\t\t", index);
-        printf(" %d\t\t", current_link->pid);
-        printf(" %s\t\t", status);
-        printf(" %s\n", current_link->cmd->arguments[0]);
-
-        current_link = current_link->next;
-        index++;
-    }
-}
 
 int openFileWithMode(const char *fileName, const char *mode) {
     int flags;
@@ -182,6 +129,7 @@ void execute(cmdLine *pCmdLine) {
         _exit(EXIT_FAILURE);
     }
 }
+
  
 void alarm_process(cmdLine *pCmdLine) {
     if (pCmdLine->argCount < 2) {
@@ -210,6 +158,7 @@ void blast_process(cmdLine *pCmdLine) {
         printf("Process %d terminated\n", pid);
     }
 }
+
 
 void change_directory(cmdLine *pCmdLine) {
     if (pCmdLine->argCount < 2) {
@@ -287,15 +236,6 @@ int handle_blast_command(cmdLine *parsedLine) {
     return 0;
 }
 
-int handle_procs_command(cmdLine* parsedLine, process** process_list) {
-    if (strcmp(parsedLine->arguments[0], "procs") == 0) {
-        printProcessList(process_list);
-        freeCmdLines(parsedLine);
-        return 1;
-    }
-    return 0;
-}
-
 void firstchildCheck(cmdLine *parsedLine, int debug,int pipefd[2],pid_t *child){
     // Fork the first child process
         if ((*child = fork()) == -1) {
@@ -345,7 +285,7 @@ void secondchildCheck(cmdLine *parsedLine, int debug,int pipefd[2],pid_t *child)
 
 }
 
-void parentCheck(cmdLine *parsedLine, int debug,pid_t pid,process** process_list ){
+void parentCheck(cmdLine *parsedLine, int debug,int pipefd[2],pid_t pid){
     if (pid == -1) {
         perror("fork failed");
     } else if (pid == 0) {
@@ -359,7 +299,6 @@ void parentCheck(cmdLine *parsedLine, int debug,pid_t pid,process** process_list
 
     } else {
         // Parent process
-        addProcess(process_list, parsedLine, pid);
         if (parsedLine->blocking) {
             waitpid(pid, NULL, 0); // Wait for the child process to complete if it's blocking
         } else {
@@ -384,7 +323,8 @@ void checkForConflictingRedirections(cmdLine *parsedLine) {
     }
 }
 
-void fork_and_execute(cmdLine *parsedLine, int debug, process** process_list) {
+
+void fork_and_execute(cmdLine *parsedLine, int debug) {
     int pipefd[2];
     pid_t child1 = -1 ;
     pid_t child2 = -1;
@@ -406,10 +346,6 @@ void fork_and_execute(cmdLine *parsedLine, int debug, process** process_list) {
         close(pipefd[0]); // Close read end of the pipe
         close(pipefd[1]); // Close write end of the pipe
 
-        // Add both child processes to the process list
-        addProcess(process_list, parsedLine, child1);
-        addProcess(process_list, parsedLine->next, child2);
-
         // Wait for both child processes to complete
         waitpid(child1, NULL, 0);
         waitpid(child2, NULL, 0);
@@ -417,15 +353,13 @@ void fork_and_execute(cmdLine *parsedLine, int debug, process** process_list) {
     } else {
         // If no pipe, handle the command as usual
         pid_t pid = fork();
-        parentCheck(parsedLine,debug,pid,process_list);
+        parentCheck(parsedLine,debug,pipefd,pid);
     }
 }
 
 void process_commands(int debug) {
     char input[INPUT_SIZE];
-    cmdLine* parsedLine;
-    process* process_list = NULL;
-
+    cmdLine *parsedLine;
 
     while (1) {
         // Display prompt
@@ -439,7 +373,6 @@ void process_commands(int debug) {
         // Parse input
         parsedLine = parse_input(input);
         if (parsedLine == NULL) {
-            fprintf(stderr, "Failed to parse command line.\n");
             continue;
         }
 
@@ -463,13 +396,8 @@ void process_commands(int debug) {
             continue;
         }
 
-        // Check for "procs" command
-        if (handle_procs_command(parsedLine, &process_list)) {
-            continue;
-        }
-
         // Fork a new process to execute the command
-        fork_and_execute(parsedLine, debug,&process_list);
+        fork_and_execute(parsedLine, debug);
 
         // Free the parsed command line
         freeCmdLines(parsedLine);
