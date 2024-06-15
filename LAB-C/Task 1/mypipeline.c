@@ -65,6 +65,7 @@ void secondChildPipe(int pipefd[2], pid_t child2){
 }
 
 int main() {
+    //I used this site to build this function : https://www.geeksforgeeks.org/c-program-demonstrate-fork-and-pipe/
     // 1. Creating a pipe
     int pipefd[2];
     pid_t child1 ;
