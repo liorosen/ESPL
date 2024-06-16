@@ -54,6 +54,6 @@
         "limits.h": "c",
         "wait.h": "c"
     },
-    "C_Cpp.errorSquiggles": "enabled",
+    "C_Cpp.errorSquiggles": "disabled",
     "C_Cpp.default.compilerPath": "/usr/bin/g++"
 }

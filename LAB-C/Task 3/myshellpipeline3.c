@@ -12,11 +12,15 @@
 #include <sys/wait.h>
 #include "LineParser.h"
 #include <bits/waitflags.h>
+#include <ctype.h>
+
 #define INPUT_SIZE 2048
 #define TERMINATED  -1
 #define RUNNING 1
 #define SUSPENDED 0
 #define WCONTINUED 8
+#define MAX_BUF 200
+#define HISTLEN 20
 
 
 typedef struct process{
@@ -30,6 +34,13 @@ void addProcess(process** process_list, cmdLine* cmd, pid_t pid);
 void printProcessList(process** process_list);
 void freeProcessList(process* process_list);
 void updateProcessStatus(process* process_list, int pid, int status);
+void print_history();
+int handle_builtin_commands(cmdLine *parsedLine, process **process_list, int debug);
+
+char history[HISTLEN][MAX_BUF];
+int newest = 0;
+int oldest = 0;
+int currhistorylen = 0;
 
 // I used the information in here : https://www.ibm.com/docs/en/zos/2.4.0?topic=functions-waitpid-wait-specific-child-process-end
 void updateProcessList(process **process_list) {
@@ -125,9 +136,12 @@ void printProcessList(process** process_list){
         printf(" %s\t\t", status);
         printf(" %s\n", current_link->cmd->arguments[0]);
 
+        process* next_link = current_link->next;
         printProcessListhelper(process_list, prev, current_link);
-        prev = current_link;
-        current_link = current_link->next;
+        if (current_link->status != TERMINATED) {
+            prev = current_link;
+        }
+        current_link = next_link;
         index++;
     }
 }
@@ -522,6 +536,9 @@ void fork_and_execute(cmdLine *parsedLine, int debug, process** process_list) {
     pid_t child2 = -1;
 
     checkForConflictingRedirections(parsedLine);
+    if (handle_builtin_commands(parsedLine, process_list, debug)) {
+        return;
+    }
 
     // Handle the "procs" command within the shell
     if (strcmp(parsedLine->arguments[0], "procs") == 0) {
@@ -559,11 +576,106 @@ void fork_and_execute(cmdLine *parsedLine, int debug, process** process_list) {
     }
 }
 
+
+void addToHistory(const char *cmd){
+    strncpy(history[newest], cmd, MAX_BUF - 1);
+    history[newest][MAX_BUF - 1] = '\0';        // Ensure the command is null-terminated
+    newest = (newest + 1) % HISTLEN;
+    if (currhistorylen < HISTLEN) {
+        currhistorylen++;
+    } else {
+        oldest = (oldest + 1) % HISTLEN;
+    }
+}
+
+void print_history() {
+    for (int i = 0; i < currhistorylen; i++) {
+        int index = (oldest + i) % HISTLEN;
+        printf("%d %s\n", i + 1, history[index]);
+    }
+}
+
+void execute_history_command(int index, process **process_list, int debug) {
+    if (index < 1 || index > currhistorylen) {
+        printf("Error: Invalid history index\n");
+        return ;
+    }
+    int hist_index = (oldest + index - 1) % HISTLEN;
+    char *cmd = history[hist_index];
+    
+    if (cmd) {
+        printf("%s\n", cmd);  // Print the command to be executed (for debugging)
+        cmdLine *parsedLine = parseCmdLines(cmd); // parsing the command again
+        if (parsedLine) {
+            if (handle_builtin_commands(parsedLine, process_list, debug)) {
+                freeCmdLines(parsedLine);
+            } else {
+                fork_and_execute(parsedLine, debug, process_list);
+            }
+        }
+    }   
+}
+
+void handle_History_commands(cmdLine* parsedLine, process **process_list, int debug){
+    // Print the history list
+    if(strcmp(parsedLine -> arguments[0],"history") ==0){
+        print_history();
+        freeCmdLines(parsedLine);       
+        return;
+    }
+
+    // Retrieve the last command line
+    else if(strcmp(parsedLine -> arguments[0],"!!") == 0){
+        if (currhistorylen == 0) {
+                printf("No commands in history.\n");
+        } else {
+            execute_history_command(currhistorylen, process_list, debug);
+        }
+        freeCmdLines(parsedLine);
+        return;
+    }
+
+    // Check for "!n" command
+    else if (parsedLine->arguments[0][0] == '!' && isdigit(parsedLine->arguments[0][1])) {
+        int index = atoi(&parsedLine->arguments[0][1]);
+        execute_history_command(index, process_list, debug);
+        freeCmdLines(parsedLine);
+        return;
+    }
+   
+}
+
+int handle_builtin_commands(cmdLine *parsedLine, process **process_list, int debug) {
+    if (strcmp(parsedLine->arguments[0], "cd") == 0) {
+        change_directory(parsedLine);
+        return 1;
+    } else if (strcmp(parsedLine->arguments[0], "quit") == 0) {
+        freeCmdLines(parsedLine);
+        exit(0);
+    } else if (strcmp(parsedLine->arguments[0], "alarm") == 0) {
+        alarm_process(parsedLine, process_list);
+        return 1;
+    } else if (strcmp(parsedLine->arguments[0], "blast") == 0) {
+        blast_process(parsedLine, process_list);
+        return 1;
+    } else if (strcmp(parsedLine->arguments[0], "sleep") == 0) {
+        sleep_process(parsedLine, process_list);
+        return 1;
+    } else if (strcmp(parsedLine->arguments[0], "procs") == 0) {
+        printProcessList(process_list);
+        return 1;
+    } else if (strcmp(parsedLine->arguments[0], "history") == 0) {
+        print_history();
+        return 1;
+    }
+    return 0; // Not a built-in command
+}
+
 void process_commands(int debug) {
     char input[INPUT_SIZE];
     cmdLine* parsedLine;
     process* process_list = NULL;
-
+    
 
     while (1) {
         // Display prompt
@@ -581,6 +693,17 @@ void process_commands(int debug) {
             continue;
         }
 
+        // Handle commands of : history , !! , !n
+        if (strcmp(parsedLine->arguments[0], "history") == 0 || 
+            strcmp(parsedLine->arguments[0], "!!") == 0 || 
+            (parsedLine->arguments[0][0] == '!' && isdigit(parsedLine->arguments[0][1]))) {
+            handle_History_commands(parsedLine, &process_list, debug);
+            continue;  
+        }
+        
+         // Add the command to history
+         addToHistory(input);
+         
         // Check for "quit" command
         if (handle_quit_command(parsedLine)) {
             break;
@@ -598,7 +721,7 @@ void process_commands(int debug) {
 
         // Check for "sleep" command
         if (handle_sleep_command(parsedLine, &process_list)) {
-            break;
+            continue;
         }
 
         // Check for "blast" command
@@ -613,15 +736,16 @@ void process_commands(int debug) {
 
         // Fork a new process to execute the command
         fork_and_execute(parsedLine, debug, &process_list);
-
-        // Free the parsed command line
-        freeCmdLines(parsedLine);
+     
     }
+
+    // Free the remaining process list
+    freeProcessList(process_list);
 }
 
 int main(int argc, char *argv[]) {
     int debug = 0;
-
+    
     // Check for the "-d" flag
     if (argc > 1 && strcmp(argv[1], "-d") == 0) {
         debug = 1;
