@@ -9,6 +9,9 @@
 %define O_CREAT 0x40
 %define O_TRUNC 0x200
 
+%define STDIN 0
+%define STDOUT 1
+
 section .bss
 inFile resd 1
 outFile resd 1
@@ -23,16 +26,16 @@ extern strlen
 
 main:
     push ebp
-    mov ebp, esp
+    mov ebp, esp            ; setting up the stack frame
     mov eax, [ebp+8]        ; argc
     mov ebx, [ebp+12]       ; argv
 
-    mov dword [inFile], 0   ; Initialize inFile to 0 (stdin)
-    mov dword [outFile], 1  ; Initialize outFile to 1 (stdout)
+    mov dword [inFile], STDIN  ; Initialize inFile to 0 (stdin)
+    mov dword [outFile], STDOUT ; Initialize outFile to 1 (stdout)
 
-    sub eax, 1              ; Decrement argc
-    jz encode               ; If no more arguments, start encoding
-    add ebx, 4              ; Move to the next argument
+    sub eax, 1              ; Decrement argc in order to skip the program name
+    jz encode               ; if(argc == 0), jump to encode- start encoding
+    add ebx, 4              ; Move to the next argument(argv[1])
 
 scan_arguments:
     mov ecx, [ebx]          ; Load current argument
@@ -46,7 +49,7 @@ next_arg:
     sub eax, 1              ; Decrement argc
     jz encode               ; If no more arguments, start encoding
     add ebx, 4              ; Move to the next argument
-    jmp parse_args
+    jmp scan_arguments      ; Loop to scan_arguments
 
 open_input_file:
     call skip_and_open
@@ -95,8 +98,9 @@ print_char:
 
 done:
     popad                   ; Restore all general-purpose registers
-    pop ebp
-    ret
+    mov eax, SYS_EXIT       ; sys_exit
+    mov ebx, 0              ; exit code
+    int 0x80                ; Exit
 
 skip_and_open:
     add ecx, 2              ; Skip "-o" or "-i"

@@ -3,7 +3,7 @@ message db 'Hello, Infected File', 0xA  ; Message to print
 msg_len equ $ - message                 ; Length of the message
 
 section .bss
-filename resb 100   ; Reserve space for filename (adjust size as needed)
+filename resb 100   ; Reserve space for filename 
 
 section .text
 global _start
