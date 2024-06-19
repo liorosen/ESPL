@@ -1,8 +1,10 @@
 section .data
     char db 0              ; Storage for a character
-    inFile dd 0            ; File descriptor for input file
-    outFile dd 1           ; File descriptor for output file (stdout)
     newline db 0xA         ; Newline character
+
+section .bss
+    inFile resd 1          ; File descriptor for input file
+    outFile resd 1         ; File descriptor for output file
 
 section .text
 global main
@@ -32,90 +34,95 @@ main:
     mov edi, [esp+4]       ; Get argc
     mov esi, [esp+8]       ; Get argv
 
-    loop_argv:
-        mov ecx, [esi]     ; Get current argv[i]
-    get_argument_length:
-        push ecx
-        call strlen        ; eax = strlen(ecx) = strlen(argv[i])
-        pop ecx
-    print_argument:
-        mov edx, eax       ; edx = length of argv[i] - Move length of argv[i] to edx.
-        mov eax, SYS_WRITE ; Prepare to write to stderr
-        mov ebx, STDERR
-        int 0x80           ; Write argument to stderr
-        mov eax, SYS_WRITE
-        mov ebx, STDERR
-        mov ecx, newline
-        mov edx, 1         ; Set length to 1
-        int 0x80           ; Write newline to stderr
-    scan_argument:
-        mov ecx, [esi]     ; ecx = current argument
-        cmp byte [ecx], '-'
-        je check_i_or_o
-    continue_loop:
-        sub edi, 1         ; Decrement argc
-        add esi, 4         ; Move to the next argv[i]
-        cmp edi, 0         ; If all arguments processed, end loop
-        jne loop_argv
-        jmp encoder        ; Start encoding if no more arguments
+    ; Initialize default file descriptors
+    mov dword [inFile], STDIN
+    mov dword [outFile], STDOUT
 
-check_i_or_o:
-    cmp word [ecx+1], 'i'
-    je open_input_file     ; If "-i", jump to open_input_file
-    cmp word [ecx+1], 'o'
-    je open_output_file    ; If "-o", jump to open_output_file
-    jmp continue_loop      ; Continue to next argument if not "-i" or "-o"
+    ; Process command-line arguments
+    
+loop_argv:
+    sub edi, 1
+    js start_encoding      ; If no more arguments, start encoding
+    mov ecx, [esi]         ; Get current argv[i]
+    add esi, 4             ; Move to the next argument
 
-encoder:
-    read_char:
-        mov eax, SYS_READ
-        mov ebx, [inFile]  ; Set file descriptor for input
-        mov ecx, char
-        mov edx, 1         ; Set number of bytes to read
-        int 0x80           ; Read a character
-    check_eof:
-        cmp eax, 0
-        jle exit_program   ; If end of file, exit program
-    should_encode:
-        cmp byte [char], 'A'
-        jl print_char      ; If char < 'A', print as is
-        cmp byte [char], 'z'
-        jg print_char      ; If char > 'z', print as is
-        add byte [char], 1 ; Increment character for encoding
-    print_char:
-        mov eax, SYS_WRITE
-        mov ebx, [outFile]
-        mov ecx, char
-        mov edx, 1
-        int 0x80           ; Write the encoded/unchanged character
-        jmp encoder        ; Continue reading next character
+    cmp byte [ecx], '-'    ; Check if argument starts with '-'
+    jne loop_argv          ; If not, continue to the next argument
+
+    cmp byte [ecx+1], 'i'
+    je open_input_file
+    cmp byte [ecx+1], 'o'
+    je open_output_file
+    jmp loop_argv          ; Continue processing arguments
+
+open_input_file:
+    add ecx, 2             ; Skip "-i"
+    mov eax, SYS_OPEN      ; sys_open
+    mov ebx, ecx           ; File name
+    mov ecx, O_RDONLY      ; Open read-only
+    int 0x80
+    test eax, eax
+    js error_exit          ; If open failed, exit
+    mov [inFile], eax      ; Save file descriptor for input
+    jmp loop_argv
+
+open_output_file:
+    add ecx, 2             ; Skip "-o"
+    mov eax, SYS_OPEN      ; sys_open
+    mov ebx, ecx           ; File name
+    mov ecx, O_WRONLY      ; Open write-only
+    or ecx, O_CREAT        ; Create if it doesn't exist
+    or ecx, O_TRUNC        ; Truncate file to zero length if it exists
+    mov edx, 0644o         ; File permissions
+    int 0x80
+    test eax, eax
+    js error_exit          ; If open failed, exit
+    mov [outFile], eax     ; Save file descriptor for output
+    jmp loop_argv
+
+start_encoding:
+    ; Start encoding process
+    pushad                 ; Save all general-purpose registers
+
+read_char:
+    mov eax, SYS_READ      ; sys_read
+    mov ebx, [inFile]      ; stdin or input file
+    lea ecx, [char]        ; Buffer to store character
+    mov edx, 1             ; Read one byte
+    int 0x80
+    test eax, eax
+    jle close_files        ; If end of file, close files
+
+    ; Encoding the character
+    cmp byte [char], 'A'
+    jl write_char
+    cmp byte [char], 'z'
+    jg write_char
+    add byte [char], 1     ; Increment character for encoding
+
+write_char:
+    mov eax, SYS_WRITE     ; sys_write
+    mov ebx, [outFile]     ; stdout or output file
+    lea ecx, [char]        ; Character to write
+    mov edx, 1             ; Write one byte
+    int 0x80
+    jmp read_char
+
+close_files:
+    mov eax, SYS_CLOSE
+    mov ebx, [inFile]
+    int 0x80               ; Close input file
+    mov eax, SYS_CLOSE
+    mov ebx, [outFile]
+    int 0x80               ; Close output file
+    jmp exit_program
+
+error_exit:
+    mov eax, SYS_EXIT
+    mov ebx, 0x55          ; Exit with error code
+    int 0x80
 
 exit_program:
     mov eax, SYS_EXIT
-    mov ebx, 0
-    int 0x80               ; Exit program
-
-open_input_file:
-    mov eax, SYS_OPEN
-    add ecx, 2
-    mov ebx, ecx           ; Set file name for input
-    mov ecx, O_RDONLY      ; Open file in read-only mode
+    mov ebx, 0             ; Exit with success code
     int 0x80
-    cmp eax, 0             ; Check if the file was opened successfully
-    jle exit_program       ; Exit if file couldn't be opened
-    mov [inFile], eax      ; Save file descriptor for input
-    jmp continue_loop      ; Continue to next argument
-
-open_output_file:
-    mov eax, SYS_OPEN
-    add ecx, 2
-    mov ebx, ecx           ; Set file name for output
-    mov ecx, O_WRONLY      ; Open file in write-only mode
-    or ecx, O_CREAT        ; Create file if it doesn't exist
-    or ecx, O_TRUNC        ; Truncate file to zero length if it exists
-    mov edx, 0644o         ; Set file permissions
-    int 0x80
-    cmp eax, 0
-    jle exit_program       ; Exit if file couldn't be opened
-    mov [outFile], eax     ; Save file descriptor for output
-    jmp continue_loop      ; Continue to next argument
