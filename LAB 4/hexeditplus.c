@@ -1,6 +1,6 @@
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 
 typedef struct {
     char debug_mode;
@@ -39,45 +39,108 @@ void set_unit_size(state* s) {
     }
 }
 
-//Here i load the file into the memory according to its location and lenght
-void load_into_memory(state* s) {
+void checksBeforeLoading(state* s, int permit, FILE **file) {
     if (strlen(s->file_name) == 0) {
         printf("Error: file name is empty\n");
+        *file = NULL;
         return;
     }
 
-    FILE *file = fopen(s->file_name, "rb");
-    if (!file) {
-        printf("Error: could not open file %s\n", s->file_name);
-        return;
+    if (permit == 0) {
+        *file = fopen(s->file_name, "rb");
+    } else if (permit == 1) {
+        *file = fopen(s->file_name, "r+b");
     }
 
+    if (!(*file)) {
+        printf("Error: could not open file %s. Please ensure the file exists and has the correct permissions.\n", s->file_name);
+        *file = NULL;
+    } else if (s->debug_mode) {
+        fprintf(stderr, "Debug: successfully opened file %s\n", s->file_name);
+    }
+}
+
+
+//Here we load the file into the memory according to its location and length
+void load_into_memory(state* s) {
     char input[256];
     unsigned int location;
     int length;
+    FILE *file;
+    size_t bytes_read = 0; // Declare bytes_read here
 
     printf("Please enter <location> <length>: ");
     fgets(input, sizeof(input), stdin);
     sscanf(input, "%x %d", &location, &length);
 
-    if (s->debug_mode) {
-        fprintf(stderr, "Debug: file_name=%s location=%x length=%d\n", s->file_name, location, length);
+    checksBeforeLoading(s, 0, &file);
+
+    // Check if the file was successfully opened
+    if (file == NULL) {
+        return;
     }
 
-    fseek(file, location, SEEK_SET);
-    size_t bytes_read = fread(s->mem_buf, s->unit_size, length, file);
-    s->mem_count = bytes_read * s->unit_size;
+    if (s->debug_mode) {
+        fprintf(stderr, "Debug: Loaded %zu bytes into memory\n", bytes_read);
+        for (size_t i = 0; i < bytes_read; i++) {
+            fprintf(stderr, "Debug: mem_buf[%zu] = %02x\n", i, s->mem_buf[i]);
+        }
+    }
+
+
+    fseek(file, location, SEEK_SET); // Move the file pointer to a specific position within a file.
+    bytes_read = fread(s->mem_buf, s->unit_size, length, file);
+    s->mem_count = bytes_read * s->unit_size; // Reflecting the total number of bytes read into memory.
 
     fclose(file);
 
     printf("Loaded %zu units into memory\n", bytes_read);
 }
 
+
 void toggle_display_mode(state* s) {
     s->display_mode = !s->display_mode;
     printf("Display flag now %s, %s representation\n",
            s->display_mode ? "on" : "off",
            s->display_mode ? "hexadecimal" : "decimal");
+}
+
+void hexidecimalCases(int length, state* s, unsigned char *start) {
+    for (int i = 0; i < length; i++) {
+        switch (s->unit_size) {
+            case 1:
+                printf("%#02hhx\n", start[i]);
+                break;
+            case 2:
+                printf("%#04hx\n", ((unsigned short*)start)[i]);
+                break;
+            case 4:
+                printf("%#08x\n", ((unsigned int*)start)[i]);
+                break;
+            default:
+                printf("Invalid unit size\n");
+                return;
+        }
+    }
+}
+
+void decimalCases(int length, state* s, unsigned char *start) {
+    for (int i = 0; i < length; i++) {
+        switch (s->unit_size) {
+            case 1:
+                printf("%hhu\n", start[i]);
+                break;
+            case 2:
+                printf("%hu\n", ((unsigned short*)start)[i]);
+                break;
+            case 4:
+                printf("%u\n", ((unsigned int*)start)[i]);
+                break;
+            default:
+                printf("Invalid unit size\n");
+                return;
+        }
+    }
 }
 
 void memory_display(state* s) {
@@ -93,52 +156,19 @@ void memory_display(state* s) {
 
     if (s->display_mode) {
         printf("Hexadecimal\n===========\n");
-        for (int i = 0; i < length; i++) {
-            switch (s->unit_size) {
-                case 1:
-                    printf("%#hhx\n", start[i]);
-                    break;
-                case 2:
-                    printf("%#hx\n", ((unsigned short*)start)[i]);
-                    break;
-                case 4:
-                    printf("%#x\n", ((unsigned int*)start)[i]);
-                    break;
-                default:
-                    printf("Invalid unit size\n");
-                    return;
-            }
-        }
+        hexidecimalCases(length, s, start);
     } else {
         printf("Decimal\n=======\n");
-        for (int i = 0; i < length; i++) {
-            switch (s->unit_size) {
-                case 1:
-                    printf("%hhd\n", start[i]);
-                    break;
-                case 2:
-                    printf("%hd\n", ((unsigned short*)start)[i]);
-                    break;
-                case 4:
-                    printf("%d\n", ((unsigned int*)start)[i]);
-                    break;
-                default:
-                    printf("Invalid unit size\n");
-                    return;
-            }
-        }
+        decimalCases(length, s, start);
     }
 }
 
 void save_into_file(state* s) {
-    if (strlen(s->file_name) == 0) {
-        printf("Error: file name is empty\n");
-        return;
-    }
+    FILE *file;
+    checksBeforeLoading(s, 1, &file);
 
-    FILE *file = fopen(s->file_name, "r+b");
-    if (!file) {
-        printf("Error: could not open file %s\n", s->file_name);
+    // Check if the file was successfully opened
+    if (file == NULL) {
         return;
     }
 
@@ -254,13 +284,28 @@ const char* menu[] = {
 
 void print_debug_info(state* s) {
     if (s->debug_mode) {
-        fprintf(stderr, "Debug: unit_size=%d file_name=%s mem_count=%zu display_mode=%s\n",
-                s->unit_size, s->file_name, s->mem_count,
+        fprintf(stderr, "Debug: unit_size=%d ", s->unit_size);
+        if (strlen(s->file_name) > 0) {
+            fprintf(stderr, "file_name=%s ", s->file_name);
+        } else {
+            fprintf(stderr, "file_name= ");
+        }
+        fprintf(stderr, "mem_count=%zu display_mode=%s\n",
+                s->mem_count,
                 s->display_mode ? "hexadecimal" : "decimal");
     }
 }
 
+
+//     if (s->debug_mode) {
+//         fprintf(stderr, "Debug: unit_size=%d file_name=%s mem_count=%zu display_mode=%s\n",
+//                 s->unit_size, s->file_name, s->mem_count,
+//                 s->display_mode ? "hexadecimal" : "decimal");
+//     }
+// }
+
 void print_menu() {
+    printf("\n");
     for (int i = 0; menu[i] != NULL; i++) {
         printf("%s\n", menu[i]);
     }
@@ -271,7 +316,9 @@ int main() {
     int choice;
 
     while (1) {
-        print_debug_info(&s);
+        if (s.debug_mode) {
+            print_debug_info(&s);
+        }
         print_menu();
         printf("> ");
         scanf("%d", &choice);
@@ -284,3 +331,4 @@ int main() {
     }
     return 0;
 }
+
