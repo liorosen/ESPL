@@ -181,7 +181,8 @@ void save_into_file(state* s) {
     fgets(input, sizeof(input), stdin);
     sscanf(input, "%x %x %d", &source_addr, &target_location, &length);
 
-    if (source_addr + length * s->unit_size > sizeof(s->mem_buf)) {
+    // Check if the source address and length are within bounds
+    if (source_addr + length * s->unit_size > sizeof(s->mem_buf) || source_addr + length * s->unit_size > s->mem_count) {
         printf("Error: source address out of bounds\n");
         fclose(file);
         return;
@@ -191,6 +192,15 @@ void save_into_file(state* s) {
 
     if (s->debug_mode) {
         fprintf(stderr, "Debug: source-address=%x target-location=%x length=%d\n", source_addr, target_location, length);
+    }
+
+    // Check if the target location is within file size
+    fseek(file, 0, SEEK_END);
+    long file_size = ftell(file);
+    if (target_location + length * s->unit_size > file_size) {
+        printf("Error: target location out of bounds\n");
+        fclose(file);
+        return;
     }
 
     fseek(file, target_location, SEEK_SET);
@@ -204,6 +214,7 @@ void save_into_file(state* s) {
         printf("Error: only %zu units were written\n", bytes_written);
     }
 }
+
 
 void memory_modify(state* s) {
     char input[256];
