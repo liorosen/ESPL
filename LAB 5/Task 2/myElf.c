@@ -213,6 +213,7 @@ void print_symbols_for_file_helper(const Elf32_Ehdr* header, const Elf32_Shdr* s
 
 
 void print_symbols_for_file(int fd, state* s) {
+    // Referenced from here : https://stackoverflow.com/questions/17029206/searching-init-section-in-elf-file
     Elf32_Ehdr* header;
     Elf32_Shdr* section_headers;
     const char* strtab;
