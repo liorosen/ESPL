@@ -150,6 +150,7 @@ void interpretELFfile(int fd, state* s, Elf32_Ehdr** header_out, Elf32_Shdr** se
     if (fd == 1) {
         *header_out = (Elf32_Ehdr*) s->map_start1;
         *section_headers_out = (Elf32_Shdr*) (s->map_start1 + (*header_out)->e_shoff);
+        // This line sets *strtab_out to point to the start of the section header string table, allowing access to the names of the sections in the ELF file.
         *strtab_out = (const char*) (s->map_start1 + (*section_headers_out)[(*header_out)->e_shstrndx].sh_offset);
     } else if (fd == 2) {
         *header_out = (Elf32_Ehdr*) s->map_start2;
