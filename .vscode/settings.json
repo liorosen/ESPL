@@ -52,7 +52,8 @@
         "typeinfo": "c",
         "sched.h": "c",
         "limits.h": "c",
-        "wait.h": "c"
+        "wait.h": "c",
+        "*.s": "c"
     },
     "C_Cpp.errorSquiggles": "disabled",
     "C_Cpp.default.compilerPath": "/usr/bin/g++"
