@@ -216,12 +216,6 @@ void print_symbols_for_file_helper(const Elf32_Ehdr* header, const Elf32_Shdr* s
         printf("Number of symbols: %d\n", num_symbols);
     }
 
-    /*if (fd == 1) {
-        printf("File: %s\n", s->file_name1);
-    } else if (fd == 2) {
-        printf("File: %s\n", s->file_name2);
-    }*/
-
     printf("File: %s\n", fd == 1 ? s->file_name1 : s->file_name2);
     for (int i = 0; i < num_symbols; i++) {
         const Elf32_Sym* sym = &symtab[i];
@@ -366,8 +360,8 @@ void check_merge(state* s) {
         return;
     }
 
-    printf("File: %s\n", s->file_name1); // Print file name for fd1
-    printf("File: %s\n", s->file_name2); // Print file name for fd2
+    // printf("File: %s\n", s->file_name1); // Print file name for fd1
+    // printf("File: %s\n", s->file_name2); // Print file name for fd2
 
     void* address_file1 = s->map_start1;
     Elf32_Sym* symtab1 = (Elf32_Sym*) (address_file1 + symtab_section1->sh_offset);
@@ -383,34 +377,40 @@ void check_merge(state* s) {
     compareSymbols(num_symbols1, num_symbols2, symtab1, symtab2, symtab_strtab1, symtab_strtab2);
 }
 
-
-void sections_Merging(state* s, Elf32_Ehdr* header1, const char* strtab1, Elf32_Shdr* symtab_section1, Elf32_Shdr* symtab_section2, Elf32_Shdr* section_headers1, Elf32_Shdr* section_headers2, size_t offset, Elf32_Shdr* new_section_headers, FILE* out_file, const char* merge_sections[], int merge_sections_length) {
+void sections_Merging(state* s, Elf32_Ehdr* header1, const char* strtab1, Elf32_Shdr* section_headers1, Elf32_Shdr* section_headers2, size_t* offset, Elf32_Shdr* new_section_headers, FILE* out_file, const char* merge_sections[], int merge_sections_length) {
     for (int i = 0; i < header1->e_shnum; i++) {
         const char* section_name = strtab1 + section_headers1[i].sh_name;
+        printf("Processing section: %s\n", section_name);
 
         // These sections do not need to be merged because they are self-contained and do not depend on the content of other sections.
         if (strcmp(section_name, ".shstrtab") == 0 || strcmp(section_name, ".symtab") == 0 || strcmp(section_name, ".strtab") == 0) {
             // Copy these sections directly without merging
             fwrite((char*)s->map_start1 + section_headers1[i].sh_offset, 1, section_headers1[i].sh_size, out_file);  // Writes the section data from the first ELF file to the output file.
-            new_section_headers[i].sh_offset = offset;
-            offset += section_headers1[i].sh_size;    // Updates the offset for the next section.
+            new_section_headers[i].sh_offset = *offset;
+            *offset += section_headers1[i].sh_size;    // Updates the offset for the next section.
+            printf("Copying section: %s\n", section_name);
+            printf("Updated offset: %zu\n", *offset);
         } else {
             // Merge sections
             for (int j = 0; j < merge_sections_length; j++) {
                 if (strcmp(section_name, merge_sections[j]) == 0) {
+                    printf("Merging section: %s\n", section_name);
                     fwrite((char*)s->map_start1 + section_headers1[i].sh_offset, 1, section_headers1[i].sh_size, out_file);
                     fwrite((char*)s->map_start2 + section_headers2[i].sh_offset, 1, section_headers2[i].sh_size, out_file);
-                    new_section_headers[i].sh_size += section_headers2[i].sh_size;
-                    new_section_headers[i].sh_offset = offset;
-                    offset += new_section_headers[i].sh_size;
+                    new_section_headers[i].sh_size = section_headers1[i].sh_size + section_headers2[i].sh_size;
+                    new_section_headers[i].sh_offset = *offset;
+                    *offset += new_section_headers[i].sh_size;
+                    printf("Merged section %s: new size %u, new offset %zu\n", section_name, new_section_headers[i].sh_size, *offset);
                     break;
                 }
             }
         }
     }
+    printf("Finished sections_Merging\n");
 }
 
 void merge_elf_files(state* s) {
+    printf("Starting merge_elf_files\n");
     Elf32_Shdr* symtab_section1;
     Elf32_Shdr* symtab_section2;
     Elf32_Shdr* section_headers1;
@@ -435,13 +435,18 @@ void merge_elf_files(state* s) {
     fwrite(header1, 1, sizeof(Elf32_Ehdr), out_file);
 
     Elf32_Shdr* new_section_headers = malloc(header1->e_shnum * sizeof(Elf32_Shdr));      // Allocates memory for the new section header table specified by header1->e_shnum.
+    if (new_section_headers == NULL) {
+        perror("Error allocating memory for new section headers");
+        fclose(out_file);
+        return;
+    }
     memcpy(new_section_headers, section_headers1, header1->e_shnum * sizeof(Elf32_Shdr)); // Copies the section header table
 
     // Merge sections .text, .data, .rodata
     const char* merge_sections[] = {".text", ".data", ".rodata"};
     size_t offset = sizeof(Elf32_Ehdr); // Start offset after the ELF header
 
-    sections_Merging(s, header1, strtab1, symtab_section1, symtab_section2, section_headers1, section_headers2, offset, new_section_headers, out_file, merge_sections, sizeof(merge_sections) / sizeof(merge_sections[0]));
+    sections_Merging(s, header1, strtab1, section_headers1, section_headers2, &offset, new_section_headers, out_file, merge_sections, sizeof(merge_sections) / sizeof(merge_sections[0]));
 
     // Write the new section header table at the end of the file
     long shoff = ftell(out_file);  // Gets the current file position, which will be the offset for the new section header table.
@@ -452,12 +457,18 @@ void merge_elf_files(state* s) {
     fseek(out_file, 0, SEEK_SET);  // Repositions the file pointer to the beginning of the file.
     fwrite(header1, 1, sizeof(Elf32_Ehdr), out_file);  // Writes the updated ELF header to the file.
 
+    printf("Writing new section headers\n");
+    for (int i = 0; i < header1->e_shnum; i++) {
+        printf("Section %d: offset %u, size %u\n", i, new_section_headers[i].sh_offset, new_section_headers[i].sh_size);
+    }
+
     // Cleanup
     free(new_section_headers);
     fclose(out_file);
 
     printf("Merged ELF file created: out.ro\n");
 }
+
 
 /*------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
@@ -532,3 +543,78 @@ int main() {
     return 0;
 }
 
+/*void sections_Merging(state* s, Elf32_Ehdr* header1, const char* strtab1, Elf32_Shdr* section_headers1, Elf32_Shdr* section_headers2, size_t* offset, Elf32_Shdr* new_section_headers, FILE* out_file, const char* merge_sections[], int merge_sections_length) {
+    for (int i = 0; i < header1->e_shnum; i++) {
+        const char* section_name = strtab1 + section_headers1[i].sh_name;
+
+        // These sections do not need to be merged because they are self-contained and do not depend on the content of other sections.
+        if (strcmp(section_name, ".shstrtab") == 0 || strcmp(section_name, ".symtab") == 0 || strcmp(section_name, ".strtab") == 0) {
+            // Copy these sections directly without merging
+            fwrite((char*)s->map_start1 + section_headers1[i].sh_offset, 1, section_headers1[i].sh_size, out_file);  // Writes the section data from the first ELF file to the output file.
+            new_section_headers[i].sh_offset = *offset;
+            *offset += section_headers1[i].sh_size;    // Updates the offset for the next section.
+        } else {
+            // Merge sections
+            for (int j = 0; j < merge_sections_length; j++) {
+                if (strcmp(section_name, merge_sections[j]) == 0) {
+                    fwrite((char*)s->map_start1 + section_headers1[i].sh_offset, 1, section_headers1[i].sh_size, out_file);
+                    fwrite((char*)s->map_start2 + section_headers2[i].sh_offset, 1, section_headers2[i].sh_size, out_file);
+                    new_section_headers[i].sh_size = section_headers1[i].sh_size + section_headers2[i].sh_size;
+                    new_section_headers[i].sh_offset = *offset;
+                    *offset += new_section_headers[i].sh_size;
+                    break;
+                }
+            }
+        }
+    }
+}
+
+void merge_elf_files(state* s) {
+    Elf32_Shdr* symtab_section1;
+    Elf32_Shdr* symtab_section2;
+    Elf32_Shdr* section_headers1;
+    Elf32_Shdr* section_headers2;
+    const char* strtab1 = NULL;
+    const char* strtab2 = NULL;
+
+    // Open the output file
+    FILE* out_file = fopen("out.ro", "wb");
+    if (!out_file) {
+        perror("Error opening output file");
+        return;
+    }
+
+    if (!check_merge_helper(s, &symtab_section1, &symtab_section2, &section_headers1, &section_headers2, &strtab1, &strtab2)) {
+        fclose(out_file);  // Close the output file if the merge check fails
+        return;
+    }
+
+    Elf32_Ehdr* header1 = (Elf32_Ehdr*) s->map_start1;
+
+    fwrite(header1, 1, sizeof(Elf32_Ehdr), out_file);
+
+    Elf32_Shdr* new_section_headers = malloc(header1->e_shnum * sizeof(Elf32_Shdr));      // Allocates memory for the new section header table specified by header1->e_shnum.
+    memcpy(new_section_headers, section_headers1, header1->e_shnum * sizeof(Elf32_Shdr)); // Copies the section header table
+
+    // Merge sections .text, .data, .rodata
+    const char* merge_sections[] = {".text", ".data", ".rodata"};
+    size_t offset = sizeof(Elf32_Ehdr); // Start offset after the ELF header
+
+    sections_Merging(s, header1, strtab1, section_headers1, section_headers2, &offset, new_section_headers, out_file, merge_sections, sizeof(merge_sections) / sizeof(merge_sections[0]));
+
+    // Write the new section header table at the end of the file
+    long shoff = ftell(out_file);  // Gets the current file position, which will be the offset for the new section header table.
+    fwrite(new_section_headers, 1, header1->e_shnum * sizeof(Elf32_Shdr), out_file);
+
+    // Update the ELF header with the new section header table offset
+    header1->e_shoff = shoff;
+    fseek(out_file, 0, SEEK_SET);  // Repositions the file pointer to the beginning of the file.
+    fwrite(header1, 1, sizeof(Elf32_Ehdr), out_file);  // Writes the updated ELF header to the file.
+
+    // Cleanup
+    free(new_section_headers);
+    fclose(out_file);
+
+    printf("Merged ELF file created: out.ro\n");
+}
+*/
