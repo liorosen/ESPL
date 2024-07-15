@@ -63,7 +63,7 @@ void mangagingMultipleFiles(state* s, int fd, struct stat sb, void* map_start) {
 
 
 bool map_and_validate_elf_file(int fd, struct stat sb, void** map_start) {
-    *map_start = mmap(NULL, sb.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
+    *map_start = mmap(NULL, sb.st_size, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
     /* Internal chooses the address at which to create the mapping, Specifies the length of the mapping,
        PROT_READ- indicates that the pages may be read , MAP_PRIVATE creates a private copy-on-write mapping,
        file descriptor of the file to be mapped, specifies the offset in the file where the mapping starts.*/
@@ -360,9 +360,6 @@ void check_merge(state* s) {
         return;
     }
 
-    // printf("File: %s\n", s->file_name1); // Print file name for fd1
-    // printf("File: %s\n", s->file_name2); // Print file name for fd2
-
     void* address_file1 = s->map_start1;
     Elf32_Sym* symtab1 = (Elf32_Sym*) (address_file1 + symtab_section1->sh_offset);
     const char* symtab_strtab1 = (const char*) (address_file1 + section_headers1[symtab_section1->sh_link].sh_offset);
@@ -447,15 +444,17 @@ void merge_elf_files(state* s) {
     size_t offset = sizeof(Elf32_Ehdr); // Start offset after the ELF header
 
     sections_Merging(s, header1, strtab1, section_headers1, section_headers2, &offset, new_section_headers, out_file, merge_sections, sizeof(merge_sections) / sizeof(merge_sections[0]));
-
+    
     // Write the new section header table at the end of the file
-    long shoff = ftell(out_file);  // Gets the current file position, which will be the offset for the new section header table.
+    Elf32_Off shoff = ftell(out_file);  // Gets the current file position, which will be the offset for the new section header table.
+    
     fwrite(new_section_headers, 1, header1->e_shnum * sizeof(Elf32_Shdr), out_file);
-
+    
     // Update the ELF header with the new section header table offset
     header1->e_shoff = shoff;
     fseek(out_file, 0, SEEK_SET);  // Repositions the file pointer to the beginning of the file.
     fwrite(header1, 1, sizeof(Elf32_Ehdr), out_file);  // Writes the updated ELF header to the file.
+    
 
     printf("Writing new section headers\n");
     for (int i = 0; i < header1->e_shnum; i++) {
@@ -515,7 +514,6 @@ const char* menu[] = {
 };
 
 
-
 void print_menu() {
     printf("\n");
     for (int i = 0; menu[i] != NULL; i++) {
@@ -525,7 +523,6 @@ void print_menu() {
 
 int main() {
     int choice;
-
     while (1) {
         if (s.debug_mode) {
             // Print debug info if needed
