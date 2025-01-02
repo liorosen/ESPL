@@ -1,9 +1,9 @@
 
 # **ESPL (Embedded Systems Programming Lab)**
-##**Overview**
+## **Overview**
 This repository contains a series of laboratory exercises for the Embedded Systems Programming Lab (ESPL) course. The labs are designed to provide hands-on experience with low-level programming, focusing on C and Assembly languages, and to deepen understanding of computer architecture and embedded systems.
 
-# #**Repository Structure**
+## **Repository Structure**
 The repository is organized into several directories, each corresponding to a specific lab exercise:<br>
 
 1. LAB-1-main: Introduction to basic C programming and simple input/output operations.<br>
